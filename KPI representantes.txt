@@ -1,0 +1,118 @@
+SELECT
+    TO_CHAR(PR.PROD_ID,'0000') || '-' || RPAD(PR.PROD_DESC,30)                 AS NOME_PRODUTO
+  /*,COUNT(DISTINCT FD.FACM_CLI_ID)                                              AS COBERTURA
+   ,ROUND(COUNT(DISTINCT FD.FACM_CLI_ID) / [I_329] * 100,2)                    AS PERC_COB
+   ,COUNT(DISTINCT FD.FACM_CLI_ID || FD.FACM_DATA)                             AS NR_PEDIDOS
+   ,ROUND(COUNT(DISTINCT FD.FACM_CLI_ID || FD.FACM_DATA) /
+   ([I_329] * 4) * 100,2)                                                      AS PERC_POS*/
+  
+   ,SUM(DECODE(FD.FACM_GEN_ID,1,FD.FACM_QTDE,0))                               AS QTD_VDA
+
+   ,SUM(DECODE(FD.FACM_GEN_ID,1,FD.FACM_VLR_BRUTO,0))                          AS VLR_VENDA
+
+--   ,MAX(FM.VLR_OBJETIVO)                                                       AS VALOR_OBJ
+--   ,MAX(FM.QTDE_OBJETIVO)                                                      AS QTDE_OBJ
+
+   /*,ROUND((SUM(DECODE(FD.FACM_GEN_ID,1,FD.FACM_VLR_BRUTO,0)) * [I_319] /   [I_320] /
+    DECODE(MAX(FM.VLR_OBJETIVO),0,1,MAX(FM.VLR_OBJETIVO)) * 100 )  ,2)         AS PERC_TEND
+
+   ,ROUND(SUM(DECODE(FD.FACM_GEN_ID,1,FD.FACM_VLR_BRUTO,0)) /
+    SUM(FD.FACM_QTDE),2)  AS PRC_MEDIO
+   ,SUM(DECODE(FD.FACM_GEN_ID,2,FD.FACM_QTDE,0))                               AS QTD_BONIF
+
+   ,SUM(DECODE(FD.FACM_GEN_ID,2,FD.FACM_VLR_BRUTO,0))                          AS VLR_BONIF
+
+   ,ROUND(SUM(DECODE(FD.FACM_GEN_ID,2,FD.FACM_QTDE,0)) /
+ SUM(DECODE(FD.FACM_GEN_ID,1,FD.FACM_QTDE,1)) * 100,2)                         AS PERC_BONIF*/
+   
+  
+FROM
+    FORNECIM_ACM_D FD
+   ,PRODUTO        PR
+   ,PRODUTO_C      PC
+   ,GENER          AP
+   ,(SELECT
+        BM.FACM_EMP_ID                    AS EMP_ROTA
+       ,BM.FACM_ANO                       AS ANO
+       ,BM.FACM_MES                       AS MES
+       ,BM.FACM_GEN_ID_ROTA_ESTR_DE       AS COD_ROTA
+       ,BM.FACM_PROD_ID                   AS COD_PROD
+       ,SUM(BM.FACM_QTDE_OBJ)             AS QTDE_OBJETIVO
+       ,SUM(BM.FACM_VLR_OBJ)              AS VLR_OBJETIVO
+       ,ROUND(SUM(BM.FACM_VLR_OBJ) / 
+              DECODE(SUM(BM.FACM_QTDE_OBJ),0,
+              1,
+              SUM(BM.FACM_QTDE_OBJ)),2)   AS PRECO_MEDIO_OBJETIVO   
+     FROM
+        FORNECIM_ACM_M BM
+     WHERE
+         BM.FACM_EMP_ID      IN([P_13]) -- Empresa
+     AND BM.FACM_ANO         = TO_CHAR(TO_DATE('#DATA_INI_KPI#','DD/MM/YYYY'),'YYYY')
+     AND BM.FACM_MES         = TO_CHAR(TO_DATE('#DATA_INI_KPI#','DD/MM/YYYY'),'MM')
+     AND BM.FACM_NIVEL_ESTR  = 5
+     AND BM.FACM_QTDE_OBJ    >0 --Somente com Objetivos
+     GROUP BY
+        BM.FACM_EMP_ID                   
+       ,BM.FACM_ANO                      
+       ,BM.FACM_MES                      
+       ,BM.FACM_GEN_ID_ROTA_ESTR_DE
+       ,BM.FACM_PROD_ID                  
+    ) FM
+    ,(SELECT
+           CLIV_GEN_EMP_ID             AS EMP_ROTA
+          ,CLIV_GEN_ID                 AS COD_ROTA
+          ,COUNT(DISTINCT CLIV_CLI_ID) AS NR_CLI_ATV
+      FROM
+           CLIENTE_V CV
+          ,CLIENTE   CL
+          ,GENER     G1
+      WHERE
+          CL.CLI_EMP_ID   = CV.CLIV_CLI_EMP_ID
+      AND CL.CLI_ID       = CV.CLIV_CLI_ID
+          
+      AND G1.GEN_TGEN_ID  = CL.CLI_GEN_TGEN_ID
+      AND G1.GEN_EMP_ID   = CL.CLI_GEN_EMP_ID
+      AND G1.GEN_ID       = CL.CLI_GEN_ID
+          
+      --Filtro
+      AND NVL(G1.GEN_NUMBER3,0) <> 1    
+      AND CL.CLI_ID             > 0
+      GROUP BY
+          CLIV_GEN_EMP_ID  
+         ,CLIV_GEN_ID      
+     ) NC
+WHERE
+--Produto Capa
+    PR.PROD_EMP_ID                        = FD.FACM_PROD_EMP_ID
+AND PR.PROD_ID                            = FD.FACM_PROD_ID
+--Produto Comercial
+AND PC.PROC_PROD_EMP_ID               (+) = PR.PROD_EMP_ID
+AND PC.PROC_PROD_ID                   (+) = PR.PROD_ID
+--Marca de Produtos
+AND AP.GEN_TGEN_ID                    (+) = PC.PROC_GEN_TGEN_ID_MARCA_DE
+AND AP.GEN_EMP_ID                     (+) = PC.PROC_GEN_EMP_ID_MARCA_DE
+AND AP.GEN_ID                         (+) = PC.PROC_GEN_ID_MARCA_DE
+--Fornecimento Mensal BT-METAS - Setores
+AND FM.EMP_ROTA                       (+) = FD.FACM_GEN_EMP_ID_ROTA_DE
+AND FM.COD_ROTA                       (+) = FD.FACM_GEN_ID_ROTA_DE
+AND FM.COD_PROD                       (+) = FD.FACM_PROD_ID
+AND FM.ANO                            (+) = TO_CHAR(TO_DATE('#DATA_INI_KPI#','DD/MM/YYYY'),'YYYY')
+AND FM.MES                            (+) = TO_CHAR(TO_DATE('#DATA_INI_KPI#','DD/MM/YYYY'),'MM')
+--Numero de Clientes
+AND NC.EMP_ROTA                       (+) = FD.FACM_GEN_EMP_ID_ROTA_DE
+AND NC.COD_ROTA                       (+) = FD.FACM_GEN_ID_ROTA_DE
+--Filtros
+AND FD.FACM_EMP_ID               IN([P_13]) -- Empresa
+/* comentada as clausulas que quebra por semana */
+  --AND FD.FACM_DATA                 >=  trunc((sysdate)-8)
+  --AND FD.FACM_DATA                 <= trunc((sysdate)-4)
+  --trunc((sysdate)-4)
+
+/* implementada clausulas para acompanhar o mes */
+  AND FD.FACM_DATA                 >= TO_DATE('#DATA_INI_KPI#','DD/MM/YYYY')
+  AND FD.FACM_DATA                 <= TO_DATE('#DATA_FIM_KPI#','DD/MM/YYYY')
+
+AND FD.FACM_GEN_ID_ROTA_DE       IN (1,2) -- Rota
+AND PC.PROC_GEN_ID_MARCA_DE IN (103,132,131)
+GROUP BY
+    TO_CHAR(PR.PROD_ID,'0000') || '-' || RPAD(PR.PROD_DESC,30)   
